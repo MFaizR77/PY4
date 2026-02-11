@@ -1,16 +1,13 @@
-# logbook_app_001
+# logbook_app_051
 
 A new Flutter project.
 
-## Getting Started
+## Self-Reflection
 
-This project is a starting point for a Flutter application.
+**Bagaimana prinsip SRP membantu kalian saat harus menambah fitur History Logger tadi?**
 
-A few resources to get you started if this is your first Flutter project:
+Prinsip Single Responsibility Principle (SRP) sangat membantu dalam pengembangan fitur History Logger dengan cara:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+1. **Pemisahan Tanggung Jawab yang Jelas**: Konsep SRP sendiri memungkinkan memisahkan antara logika dan view (ui), hal ini membuat kode lebih terstruktur dan mudah dipahami.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+2. **Maintainability**: Kode yang mengikuti SRP lebih mudah dipelihara karena setiap kelas memiliki fokus yang jelas. Developer lain dapat dengan cepat memahami fungsi masing-masing komponen.

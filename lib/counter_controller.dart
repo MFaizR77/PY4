@@ -11,26 +11,27 @@ class CounterController {
 
   void increment() {
     _counter += _step;
-    _addHistory("increment", _step);
+    _addHistory("increment step", _step);
   }
 
   void decrement() {
     if (_counter > 0 && _counter >= _step) {
       _counter -= _step;
-      _addHistory("decrement", _step);
+      _addHistory("decrement step", _step);
     }
   }
 
   void reset() {
     _counter = 0;
-    _addHistory("reset", 0);
+    _addHistory("reset step", 0);
   }
 
   void newStep(int step) {
     if (step > 0 && step <= 100000) {
       _step = step;
-    }
+    } 
     if (step > 100000) {
+      _step = 100000;
       _addHistory("Failed to change step", step);
     } else {
       _addHistory("Change step", step);
@@ -50,4 +51,9 @@ class CounterController {
   List<String> get recentHistory {
     return _history.reversed.toList();
   }
+
+  void clearHistory() {
+    _history.clear();
+  }
 }
+

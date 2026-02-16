@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'counter_controller.dart';
+import 'package:logbook_app_001/features/logbook/counter_controller.dart';
+import 'package:logbook_app_001/features/auth/login_view.dart';
 
 class CounterView extends StatefulWidget {
-  const CounterView({super.key});
+  final String username;
+
+  const CounterView({super.key, required this.username});
+
   @override
   State<CounterView> createState() => _CounterViewState();
 }
@@ -14,6 +18,18 @@ class _CounterViewState extends State<CounterView> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+      _controller.setUsername(widget.username);
+    _loadSavedCounter(); 
+  }
+
+  Future<void> _loadSavedCounter() async {
+    await _controller.loadCounter(); 
+    setState(() {});
   }
 
   void _confirmReset() {
@@ -35,7 +51,7 @@ class _CounterViewState extends State<CounterView> {
             ),
             TextButton(
               onPressed: () {
-                setState(() => _controller.reset());
+                setState(() => _controller.reset(widget.username));
                 Navigator.of(context).pop(); // tutup dialog
                 _showSnackBar('Counter berhasil di-reset');
               },
@@ -47,14 +63,73 @@ class _CounterViewState extends State<CounterView> {
     );
   }
 
+  void _logout() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginView()),
+      (route) => false,
+    );
+  }
+
+  void _confirmLogout() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Konfirmasi Logout'),
+          content: Text('Apakah Anda yakin ingin logout, ${widget.username}?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _logout();
+              },
+              child: const Text('Logout', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("LogBook: Versi SRP")),
+      appBar: AppBar(
+        title: Text("LogBook - ${widget.username}"),
+        actions: [
+          IconButton(
+            onPressed: _confirmLogout,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
+          ),
+        ],
+      ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Welcome Message
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Selamat datang, ${widget.username}!',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
             const Text("Total Hitungan:"),
             Text('${_controller.value}', style: const TextStyle(fontSize: 40)),
 
@@ -69,7 +144,7 @@ class _CounterViewState extends State<CounterView> {
                 onChanged: (value) {
                   final step = int.tryParse(value);
                   if (step != null && step > 0) {
-                    setState(() => _controller.newStep(step));
+                    setState(() => _controller.newStep(step, widget.username));
                   }
                 },
                 decoration: const InputDecoration(
@@ -93,17 +168,17 @@ class _CounterViewState extends State<CounterView> {
                 itemBuilder: (context, index) {
                   String item = _controller.recentHistory[index];
 
-                  Color textcolor = Colors.black;
+                  Color textColor = Colors.black;
                   if (item.contains("increment")) {
-                    textcolor = Colors.green;
+                    textColor = Colors.green;
                   } else if (item.contains("decrement")) {
-                    textcolor = Colors.red;
+                    textColor = Colors.red;
                   } else if (item.contains("reset")) {
-                    textcolor = Colors.orange;
+                    textColor = Colors.orange;
                   }
 
                   return ListTile(
-                    textColor: textcolor,
+                    textColor: textColor,
                     title: Text(_controller.recentHistory[index]),
                   );
                 },
@@ -112,13 +187,12 @@ class _CounterViewState extends State<CounterView> {
           ],
         ),
       ),
-
       floatingActionButton: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           FloatingActionButton(
             onPressed: () => setState(() {
-              _controller.increment();
+              _controller.increment(widget.username);
             }),
             tooltip: 'Increment',
             child: const Icon(Icons.add),
@@ -129,7 +203,7 @@ class _CounterViewState extends State<CounterView> {
           const SizedBox(width: 15),
           FloatingActionButton(
             onPressed: () => setState(() {
-              _controller.decrement();
+              _controller.decrement(widget.username);
             }),
             tooltip: 'Decrement',
             child: const Icon(Icons.remove),
@@ -156,7 +230,7 @@ class _CounterViewState extends State<CounterView> {
             child: const Icon(Icons.delete),
             foregroundColor: Colors.black,
             backgroundColor: Colors.white,
-          )
+          ),
         ],
       ),
     );

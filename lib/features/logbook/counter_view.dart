@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:logbook_app_001/features/logbook/counter_controller.dart';
 import 'package:logbook_app_001/features/auth/login_view.dart';
+import 'package:logbook_app_001/features/onboarding/onboarding_view.dart';
 
 class CounterView extends StatefulWidget {
   final String username;
@@ -66,7 +67,7 @@ class _CounterViewState extends State<CounterView> {
   void _logout() {
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const LoginView()),
+      MaterialPageRoute(builder: (context) => const OnboardingView()),
       (route) => false,
     );
   }
@@ -121,7 +122,7 @@ class _CounterViewState extends State<CounterView> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                'Selamat datang, ${widget.username}!',
+                _controller.currentTime(widget.username),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,

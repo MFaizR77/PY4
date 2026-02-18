@@ -80,6 +80,25 @@ class CounterController {
     }
   }
 
+  String currentTime(String username) {
+    String current = "pagi";
+    final currentTime =
+        '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}';
+
+    final currentHour = DateTime.now().hour;
+    if (currentHour >= 0 && currentHour < 12) {
+      current = "Pagi";
+    } else if (currentHour >= 12 && currentHour < 15) {
+      current = "Siang";
+    } else if (currentHour >= 15 && currentHour < 18) {
+      current = "Sore";
+    } else {
+      current = "Malam";
+    }
+
+    return "Selamat ${current.substring(0,1).toUpperCase()}${current.substring(1).toLowerCase()}, $username, anda login pada $currentTime";
+  }
+
   List<String> get recentHistory {
     return _history.reversed.toList();
   }

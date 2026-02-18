@@ -66,6 +66,8 @@ flutter:
     - assets/image/Autentikasi.png
     - assets/image/Navigasi.png
     - assets/image/DataPersistance.png
+    - assets/image/Autentikasi2.jpg
+    - assets/image/Navigasi2.jpg
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

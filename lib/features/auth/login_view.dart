@@ -24,16 +24,35 @@ class _LoginViewState extends State<LoginView> {
   int _loginAttempts = 0;
   bool _isButtonDisabled = false;
   Timer? _cooldownTimer;
+  int _cooldownSeconds = 10;
 
   void dispose() {
     _cooldownTimer?.cancel();
     super.dispose();
   }
 
+  void startTimer(){
+    const onSec = const Duration(seconds: 1);
+    _cooldownTimer = Timer.periodic(onSec, (timer) {
+      if(_cooldownSeconds == 0){
+        setState(() {
+          timer.cancel();
+        });
+        timer.cancel();
+      } else {
+        setState(() {
+          _cooldownSeconds--;
+        });
+      }
+    });
+  }
+
   void _startCooldown() {
     setState(() {
       _isButtonDisabled = true;
     });
+
+    startTimer();
 
     _cooldownTimer = Timer(const Duration(seconds: 10), () {
       setState(() {
@@ -154,7 +173,7 @@ class _LoginViewState extends State<LoginView> {
               style: ElevatedButton.styleFrom(
                 disabledBackgroundColor: Colors.grey,
               ),
-              child: Text(_isButtonDisabled ? "Terkunci (10 detik)" : "Login"),
+              child: Text(_isButtonDisabled ? "Terkunci (${_cooldownSeconds} detik)" : "Login"),
             ),
           ],
         ),

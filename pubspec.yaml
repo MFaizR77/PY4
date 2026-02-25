@@ -68,6 +68,7 @@ flutter:
     - assets/image/DataPersistance.png
     - assets/image/Autentikasi2.jpg
     - assets/image/Navigasi2.jpg
+    - assets/image/note.jpg
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

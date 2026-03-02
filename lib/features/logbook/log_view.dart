@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:logbook_app_001/features/onboarding/onboarding_view.dart';
 import 'package:logbook_app_001/features/logbook/log_controller.dart';
-import '../logbook/models/log_model.dart';
+import 'package:logbook_app_001/models/logbook_model.dart';
 import 'package:logbook_app_001/features/logbook/widgets/greeting_header.dart';
 import 'package:logbook_app_001/features/logbook/widgets/app_snackbar.dart';
+import 'package:logbook_app_001/services/mongo_service.dart';
+import 'package:logbook_app_001/helpers/log_helper.dart';
 
 class LogView extends StatefulWidget {
   final String username;
@@ -15,27 +17,85 @@ class LogView extends StatefulWidget {
 }
 
 class _LogViewState extends State<LogView> {
-  final LogController _logController = LogController();
+  late LogController _controller;
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
-  List<LogModel> _filteredLogs = [];
+  List<Logbook> _filteredLogs = [];
   String _searchQuery = "";
   List<String> _categories = ["Work", "Personal", "Study", "Other"];
   String _selectedCategory = "Other";
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _logController.setUsername(widget.username);
+    _controller = LogController();
+    _controller.setUsername(widget.username);
 
-    _filteredLogs = _logController.logsNotifier.value;
+    _filteredLogs = _controller.logsNotifier.value;
 
-    _logController.logsNotifier.addListener(() {
+    _controller.logsNotifier.addListener(() {
       _applyFilter(_searchQuery);
     });
+    
+    Future.microtask(() => _initDatabase());
   }
 
-  void _showEditLogDialog(int index, LogModel log) {
+  Future<void> _initDatabase() async {
+    setState(() => _isLoading = true);
+    try {
+      await LogHelper.writeLog(
+        "UI: Memulai inisialisasi database...",
+        source: "log_view.dart",
+      );
+
+      await LogHelper.writeLog(
+        "UI: Menghubungi MongoService.connect()...",
+        source: "log_view.dart",
+      );
+
+      await MongoService().connect().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception(
+          "Koneksi Cloud Timeout. Periksa sinyal/IP Whitelist.",
+        ),
+      );
+
+      await LogHelper.writeLog(
+        "UI: Koneksi MongoService BERHASIL.",
+        source: "log_view.dart",
+      );
+
+      await LogHelper.writeLog(
+        "UI: Memanggil controller.loadFromDisk()...",
+        source: "log_view.dart",
+      );
+
+      await _controller.loadFromDisk();
+
+      await LogHelper.writeLog(
+        "UI: Data berhasil dimuat ke Notifier.",
+        source: "log_view.dart",
+      );
+    } catch (e) {
+      await LogHelper.writeLog(
+        "UI: Error - $e",
+        source: "log_view.dart",
+        level: 1,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Masalah: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showEditLogDialog(int index, Logbook log) {
     _titleController.text = log.title;
     _contentController.text = log.description;
     showDialog(
@@ -56,7 +116,7 @@ class _LogViewState extends State<LogView> {
           ),
           ElevatedButton(
             onPressed: () {
-              _logController.updateLog(
+              _controller.updateLog(
                 index,
                 _titleController.text,
                 _contentController.text,
@@ -93,7 +153,7 @@ class _LogViewState extends State<LogView> {
           ),
           ElevatedButton(
             onPressed: () {
-              _logController.removeLog(index);
+              _controller.removeLog(index);
               showAppSnackbar(
                 context,
                 "Catatan berhasil dihapus!",
@@ -170,7 +230,7 @@ class _LogViewState extends State<LogView> {
                 return;
               }
 
-              _logController.addLog(
+              _controller.addLog(
                 _titleController.text,
                 _contentController.text,
                 _selectedCategory,
@@ -234,7 +294,7 @@ class _LogViewState extends State<LogView> {
   void _applyFilter(String query) {
     _searchQuery = query;
 
-    final allLogs = _logController.logsNotifier.value;
+    final allLogs = _controller.logsNotifier.value;
 
     setState(() {
       if (query.isEmpty) {
@@ -391,21 +451,34 @@ class _LogViewState extends State<LogView> {
           ),
 
           Expanded(
-            child: ValueListenableBuilder<List<LogModel>>(
-              valueListenable: _logController.logsNotifier,
+            child: ValueListenableBuilder<List<Logbook>>(
+              valueListenable: _controller.logsNotifier,
               builder: (context, currentLogs, child) {
+                if (_isLoading) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text("Menghubungkan ke MongoDB Atlas..."),
+                      ],
+                    ),
+                  );
+                }
+
                 if (currentLogs.isEmpty) {
                   return Center(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Image.asset(
-                          'assets/image/note.jpg',
-                          width: 150,
-                          height: 150,
-                        ),
+                        const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
-                        Text("Belum ada catatan. Yuk bikin catatan!"),
+                        const Text("Belum ada catatan di Cloud. Data masih kosong"),
+                        ElevatedButton(
+                          onPressed: _showAddLogDialog,
+                          child: const Text("Buat Catatan Pertama"),
+                        ),
                       ],
                     ),
                   );
@@ -419,7 +492,7 @@ class _LogViewState extends State<LogView> {
                   itemCount: _filteredLogs.length,
                   itemBuilder: (context, index) {
                     final log = _filteredLogs[index];
-                    final originalIndex = _logController.logsNotifier.value
+                    final originalIndex = _controller.logsNotifier.value
                         .indexOf(log);
                     return Dismissible(
                       key: Key(log.date.toString()),
@@ -438,7 +511,7 @@ class _LogViewState extends State<LogView> {
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
                       onDismissed: (direction) {
-                        _logController.removeLog(originalIndex);
+                        _controller.removeLog(originalIndex);
                         showAppSnackbar(
                           context,
                           "Catatan dihapus!",

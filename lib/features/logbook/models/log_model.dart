@@ -11,7 +11,6 @@ class LogModel {
     required this.category,
   });
 
-  // Untuk Tugas HOTS: Konversi Map (JSON) ke Object
   factory LogModel.fromMap(Map<String, dynamic> map) {
     return LogModel(
       title: map['title'],
@@ -21,7 +20,6 @@ class LogModel {
     );
   }
 
-  // Konversi Object ke Map (JSON) untuk disimpan
   Map<String, dynamic> toMap() {
     return {
       'title': title,

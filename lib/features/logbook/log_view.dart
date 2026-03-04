@@ -5,7 +5,9 @@ import 'package:logbook_app_001/models/logbook_model.dart';
 import 'package:logbook_app_001/features/logbook/widgets/greeting_header.dart';
 import 'package:logbook_app_001/features/logbook/widgets/app_snackbar.dart';
 import 'package:logbook_app_001/services/mongo_service.dart';
+import 'package:logbook_app_001/services/connection_service.dart';
 import 'package:logbook_app_001/helpers/log_helper.dart';
+import 'package:logbook_app_001/helpers/date_time_helper.dart';
 
 class LogView extends StatefulWidget {
   final String username;
@@ -25,20 +27,79 @@ class _LogViewState extends State<LogView> {
   List<String> _categories = ["Work", "Personal", "Study", "Other"];
   String _selectedCategory = "Other";
   bool _isLoading = true;
+  late ConnectionService _connectionService;
+  bool _wasOffline = false;
 
   @override
   void initState() {
     super.initState();
     _controller = LogController();
     _controller.setUsername(widget.username);
+    _connectionService = ConnectionService();
+    _connectionService.init();
 
     _filteredLogs = _controller.logsNotifier.value;
 
     _controller.logsNotifier.addListener(() {
       _applyFilter(_searchQuery);
     });
-    
+
+    _connectionService.isConnectedNotifier.addListener(_onConnectionChanged);
+
     Future.microtask(() => _initDatabase());
+  }
+
+  void _onConnectionChanged() {
+    final isConnected = _connectionService.isConnectedNotifier.value;
+
+    if (!isConnected) {
+      _wasOffline = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.wifi_off, color: Colors.white),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Tidak ada koneksi internet. Mode Offline.'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else if (_wasOffline && isConnected) {
+      _wasOffline = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.wifi, color: Colors.white),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Koneksi internet kembali. Menyinkronkan data...',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _refreshData();
+      }
+    }
+  }
+
+  Future<void> _refreshData() async {
+    await _controller.loadFromDisk();
   }
 
   Future<void> _initDatabase() async {
@@ -472,9 +533,15 @@ class _LogViewState extends State<LogView> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
+                        const Icon(
+                          Icons.cloud_off,
+                          size: 64,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(height: 16),
-                        const Text("Belum ada catatan di Cloud. Data masih kosong"),
+                        const Text(
+                          "Belum ada catatan di Cloud. Data masih kosong",
+                        ),
                         ElevatedButton(
                           onPressed: _showAddLogDialog,
                           child: const Text("Buat Catatan Pertama"),
@@ -488,114 +555,168 @@ class _LogViewState extends State<LogView> {
                   return const Center(child: Text("Tidak ada hasil."));
                 }
 
-                return ListView.builder(
-                  itemCount: _filteredLogs.length,
-                  itemBuilder: (context, index) {
-                    final log = _filteredLogs[index];
-                    final originalIndex = _controller.logsNotifier.value
-                        .indexOf(log);
-                    return Dismissible(
-                      key: Key(log.date.toString()),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (direction) {
-                        _controller.removeLog(originalIndex);
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    if (_connectionService.isConnected) {
+                      await _controller.loadFromDisk();
+                      await LogHelper.writeLog(
+                        "UI: Data berhasil diperbarui dari Cloud",
+                        source: "log_view.dart",
+                      );
+                      if (mounted) {
                         showAppSnackbar(
                           context,
-                          "Catatan dihapus!",
+                          "Data berhasil diperbarui!",
                           SnackbarType.success,
                         );
-                      },
-                      child: Card(
-                        elevation: 3,
-                        shadowColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 6,
-                        ),
-                        color: _colorCategory(log.category),
-                        child: ListTile(
-                          leading: Icon(
-                            _iconCategory(log.category),
-                            color: _textColorForCategory(log.category),
-                          ),
-                          title: Text(
-                            log.title,
-                            style: TextStyle(
-                              color: _textColorForCategory(log.category),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            log.description,
-                            style: TextStyle(
-                              color: _textColorForCategory(log.category),
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.grey.shade300,
+                      }
+                    } else {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Row(
+                              children: [
+                                const Icon(Icons.wifi_off, color: Colors.white),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Tidak ada koneksi. Tidak bisa memperbarui data.',
                                   ),
                                 ),
-                                child: Text(
-                                  log.category,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.edit,
-                                  color: Colors.blue,
-                                ),
-                                onPressed: () => _showEditLogDialog(index, log),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete,
-                                  color: Colors.red,
-                                ),
-                                onPressed: () {
-                                  _removeDialog(index);
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
+                            backgroundColor: Colors.orange,
+                            behavior: SnackBarBehavior.floating,
                           ),
-                        ),
-                      ),
-                    );
+                        );
+                      }
+                    }
                   },
+                  child: ListView.builder(
+                    itemCount: _filteredLogs.length,
+                    itemBuilder: (context, index) {
+                      final log = _filteredLogs[index];
+                      final originalIndex = _controller.logsNotifier.value
+                          .indexOf(log);
+                      return Dismissible(
+                        key: Key(log.date.toString()),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        onDismissed: (direction) {
+                          _controller.removeLog(originalIndex);
+                          showAppSnackbar(
+                            context,
+                            "Catatan dihapus!",
+                            SnackbarType.success,
+                          );
+                        },
+                        child: Card(
+                          elevation: 3,
+                          shadowColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 6,
+                          ),
+                          color: _colorCategory(log.category),
+                          child: ListTile(
+                            leading: Icon(
+                              _iconCategory(log.category),
+                              color: _textColorForCategory(log.category),
+                            ),
+                            title: Text(
+                              log.title,
+                              style: TextStyle(
+                                color: _textColorForCategory(log.category),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  log.description,
+                                  style: TextStyle(
+                                    color: _textColorForCategory(log.category),
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  DateTimeHelper.formatTimestamp(log.date),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _textColorForCategory(
+                                      log.category,
+                                    ).withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  margin: const EdgeInsets.only(right: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.9),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    log.category,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.edit,
+                                    color: Colors.blue,
+                                  ),
+                                  onPressed: () =>
+                                      _showEditLogDialog(index, log),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
+                                  onPressed: () {
+                                    _removeDialog(index);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 );
               },
             ),

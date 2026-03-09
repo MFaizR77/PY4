@@ -97,11 +97,16 @@ class _LoginViewState extends State<LoginView> {
     }
 
     if (isSuccess) {
+      final currentUser = {
+        'uid': user,
+        'username': user,
+        'role': user.toLowerCase() == 'admin' ? 'Ketua' : 'Anggota',
+        'teamId': 'MEKTRA_KLP_01',
+      };
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          // Di sini kita kirimkan variabel 'user' ke parameter 'username' di CounterView
-          builder: (context) => LogView(username: user),
+          builder: (context) => LogView(currentUser: currentUser),
         ),
       );
     } else {

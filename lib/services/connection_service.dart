@@ -7,9 +7,11 @@ class ConnectionService {
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   final ValueNotifier<bool> _isConnectedNotifier = ValueNotifier(true);
+  final _onConnectionRestored = StreamController<void>.broadcast();
   
   ValueNotifier<bool> get isConnectedNotifier => _isConnectedNotifier;
   bool get isConnected => _isConnectedNotifier.value;
+  Stream<void> get onConnectionRestored => _onConnectionRestored.stream;
 
   factory ConnectionService() => _instance;
   
@@ -24,13 +26,16 @@ class ConnectionService {
 
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final wasConnected = _isConnectedNotifier.value;
-    _isConnectedNotifier.value = results.isNotEmpty && 
+    final nowConnected = results.isNotEmpty && 
         !results.contains(ConnectivityResult.none);
     
-    if (wasConnected != _isConnectedNotifier.value) {
+    _isConnectedNotifier.value = nowConnected;
+    
+    if (wasConnected != nowConnected && nowConnected) {
       if (kDebugMode) {
-        print('[ConnectionService] Connection changed: ${_isConnectedNotifier.value}');
+        print('[ConnectionService] Connection restored! Triggering sync...');
       }
+      _onConnectionRestored.add(null);
     }
   }
 
@@ -42,6 +47,7 @@ class ConnectionService {
 
   void dispose() {
     _subscription?.cancel();
+    _onConnectionRestored.close();
     _isConnectedNotifier.dispose();
   }
 }

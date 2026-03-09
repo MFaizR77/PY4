@@ -1,6 +1,6 @@
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:logbook_app_001/models/logbook_model.dart';
+import 'package:logbook_app_001/features/logbook/models/log_model.dart';
 import 'package:logbook_app_001/helpers/log_helper.dart';
 import 'package:flutter/foundation.dart';
 
@@ -75,7 +75,7 @@ class MongoService {
     }
   }
 
-  Future<List<Logbook>> getLogs() async {
+  Future<List<LogModel>> getLogs(String teamId) async {
     if (_isWeb) {
       await LogHelper.writeLog(
         "DATABASE: getLogs() skipped di Web",
@@ -89,13 +89,15 @@ class MongoService {
       final collection = await _getSafeCollection();
 
       await LogHelper.writeLog(
-        "INFO: Fetching data from Cloud...",
+        "INFO: Fetching data for Team: $teamId",
         source: _source,
         level: 3,
       );
 
-      final List<Map<String, dynamic>> data = await collection.find().toList();
-      return data.map((json) => Logbook.fromMap(json)).toList();
+      final List<Map<String, dynamic>> data = await collection
+          .find(where.eq('teamId', teamId))
+          .toList();
+      return data.map((json) => LogModel.fromMap(json)).toList();
     } catch (e) {
       await LogHelper.writeLog(
         "ERROR: Fetch Failed - $e",
@@ -106,7 +108,7 @@ class MongoService {
     }
   }
 
-  Future<void> insertLog(Logbook log) async {
+  Future<void> insertLog(LogModel log) async {
     if (_isWeb) {
       await LogHelper.writeLog(
         "DATABASE: insertLog() skipped di Web",
@@ -135,7 +137,7 @@ class MongoService {
     }
   }
 
-  Future<void> updateLog(Logbook log) async {
+  Future<void> updateLog(LogModel log) async {
     if (_isWeb) {
       await LogHelper.writeLog(
         "DATABASE: updateLog() skipped di Web",
@@ -150,7 +152,7 @@ class MongoService {
       if (log.id == null)
         throw Exception("ID Log tidak ditemukan untuk update");
 
-      await collection.replaceOne(where.id(log.id!), log.toMap());
+      await collection.replaceOne(where.id(ObjectId.fromHexString(log.id!)), log.toMap());
 
       await LogHelper.writeLog(
         "DATABASE: Update '${log.title}' Berhasil",

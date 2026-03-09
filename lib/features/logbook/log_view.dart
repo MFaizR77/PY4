@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:logbook_app_001/features/onboarding/onboarding_view.dart';
 import 'package:logbook_app_001/features/logbook/log_controller.dart';
-import 'package:logbook_app_001/models/logbook_model.dart';
+import 'package:logbook_app_001/features/logbook/models/log_model.dart';
 import 'package:logbook_app_001/features/logbook/widgets/greeting_header.dart';
 import 'package:logbook_app_001/features/logbook/widgets/app_snackbar.dart';
+import 'package:logbook_app_001/features/logbook/log_editor_page.dart';
 import 'package:logbook_app_001/services/mongo_service.dart';
 import 'package:logbook_app_001/services/connection_service.dart';
+import 'package:logbook_app_001/services/access_control_service.dart';
 import 'package:logbook_app_001/helpers/log_helper.dart';
 import 'package:logbook_app_001/helpers/date_time_helper.dart';
 
 class LogView extends StatefulWidget {
-  final String username;
+  final dynamic currentUser;
 
-  const LogView({super.key, required this.username});
+  const LogView({super.key, required this.currentUser});
 
   @override
   State<LogView> createState() => _LogViewState();
@@ -20,12 +22,8 @@ class LogView extends StatefulWidget {
 
 class _LogViewState extends State<LogView> {
   late LogController _controller;
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _contentController = TextEditingController();
-  List<Logbook> _filteredLogs = [];
+  List<LogModel> _filteredLogs = [];
   String _searchQuery = "";
-  List<String> _categories = ["Work", "Personal", "Study", "Other"];
-  String _selectedCategory = "Other";
   bool _isLoading = true;
   late ConnectionService _connectionService;
   bool _wasOffline = false;
@@ -34,9 +32,14 @@ class _LogViewState extends State<LogView> {
   void initState() {
     super.initState();
     _controller = LogController();
-    _controller.setUsername(widget.username);
+    _controller.setUserInfo(
+      widget.currentUser['uid'] ?? 'unknown',
+      widget.currentUser['role'] ?? 'Member',
+      widget.currentUser['teamId'] ?? 'no_team',
+    );
     _connectionService = ConnectionService();
     _connectionService.init();
+    _controller.startListeningConnection();
 
     _filteredLogs = _controller.logsNotifier.value;
 
@@ -82,9 +85,7 @@ class _LogViewState extends State<LogView> {
                 const Icon(Icons.wifi, color: Colors.white),
                 const SizedBox(width: 8),
                 const Expanded(
-                  child: Text(
-                    'Koneksi internet kembali. Menyinkronkan data...',
-                  ),
+                  child: Text('Koneksi internet kembali. Menyinkronkan data...'),
                 ),
               ],
             ),
@@ -93,13 +94,14 @@ class _LogViewState extends State<LogView> {
             behavior: SnackBarBehavior.floating,
           ),
         );
+        _controller.startListeningConnection();
         _refreshData();
       }
     }
   }
 
   Future<void> _refreshData() async {
-    await _controller.loadFromDisk();
+    await _controller.loadLogs(widget.currentUser['teamId'] ?? 'no_team');
   }
 
   Future<void> _initDatabase() async {
@@ -110,11 +112,6 @@ class _LogViewState extends State<LogView> {
         source: "log_view.dart",
       );
 
-      await LogHelper.writeLog(
-        "UI: Menghubungi MongoService.connect()...",
-        source: "log_view.dart",
-      );
-
       await MongoService().connect().timeout(
         const Duration(seconds: 15),
         onTimeout: () => throw Exception(
@@ -122,17 +119,7 @@ class _LogViewState extends State<LogView> {
         ),
       );
 
-      await LogHelper.writeLog(
-        "UI: Koneksi MongoService BERHASIL.",
-        source: "log_view.dart",
-      );
-
-      await LogHelper.writeLog(
-        "UI: Memanggil controller.loadFromDisk()...",
-        source: "log_view.dart",
-      );
-
-      await _controller.loadFromDisk();
+      await _controller.loadLogs(widget.currentUser['teamId'] ?? 'no_team');
 
       await LogHelper.writeLog(
         "UI: Data berhasil dimuat ke Notifier.",
@@ -156,45 +143,16 @@ class _LogViewState extends State<LogView> {
     }
   }
 
-  void _showEditLogDialog(int index, Logbook log) {
-    _titleController.text = log.title;
-    _contentController.text = log.description;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Edit Catatan"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: _titleController),
-            TextField(controller: _contentController),
-          ],
+  void _goToEditor({LogModel? log, int? index}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LogEditorPage(
+          log: log,
+          index: index,
+          controller: _controller,
+          currentUser: widget.currentUser,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Batal"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _controller.updateLog(
-                index,
-                _titleController.text,
-                _contentController.text,
-                _selectedCategory,
-              );
-              showAppSnackbar(
-                context,
-                "Catatan berhasil diperbarui!",
-                SnackbarType.success,
-              );
-              _titleController.clear();
-              _contentController.clear();
-              Navigator.pop(context);
-            },
-            child: const Text("Update"),
-          ),
-        ],
       ),
     );
   }
@@ -229,96 +187,6 @@ class _LogViewState extends State<LogView> {
     );
   }
 
-  void _showAddLogDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Tambah Catatan Baru"),
-
-        content: StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(hintText: "Judul Catatan"),
-                ),
-                TextField(
-                  controller: _contentController,
-                  decoration: const InputDecoration(hintText: "Isi Deskripsi"),
-                ),
-                const SizedBox(height: 16),
-
-                DropdownButton(
-                  value: _selectedCategory,
-                  hint: const Text("Pilih Kategori"),
-                  isExpanded: true,
-                  onChanged: (newValue) {
-                    setDialogState(() {
-                      _selectedCategory = newValue ?? "";
-                    });
-                  },
-                  items: _categories.map((category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
-                    );
-                  }).toList(),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Batal"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              // Jalankan fungsi tambah di Controller
-
-              String title = _titleController.text.trim();
-              String content = _contentController.text.trim();
-
-              if (title.isEmpty || content.isEmpty) {
-                showAppSnackbar(
-                  context,
-                  "Judul dan deskripsi tidak boleh kosong!",
-                  SnackbarType.error,
-                );
-                return;
-              }
-
-              _controller.addLog(
-                _titleController.text,
-                _contentController.text,
-                _selectedCategory,
-              );
-
-              // Refresh UI Utama (List di belakang dialog)
-              setState(() {});
-
-              showAppSnackbar(
-                context,
-                "Catatan berhasil ditambahkan!",
-                SnackbarType.success,
-              );
-
-              // Bersihkan input
-              _titleController.clear();
-              _contentController.clear();
-
-              Navigator.pop(context);
-            },
-            child: const Text("Simpan"),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _logout() {
     Navigator.pushAndRemoveUntil(
       context,
@@ -333,7 +201,7 @@ class _LogViewState extends State<LogView> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Konfirmasi Logout'),
-          content: Text('Apakah Anda yakin ingin logout, ${widget.username}?'),
+          content: Text('Apakah Anda yakin ingin logout, ${widget.currentUser['username']}?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -354,56 +222,44 @@ class _LogViewState extends State<LogView> {
 
   void _applyFilter(String query) {
     _searchQuery = query;
-
     final allLogs = _controller.logsNotifier.value;
+    final currentUserId = widget.currentUser['uid'] ?? 'unknown';
 
     setState(() {
+      List<LogModel> visibleLogs = allLogs.where((log) {
+        final isOwner = log.authorId == currentUserId;
+        final isPublic = log.isPublic == true;
+        return isOwner || isPublic;
+      }).toList();
+
       if (query.isEmpty) {
-        _filteredLogs = allLogs;
+        _filteredLogs = visibleLogs;
       } else {
-        _filteredLogs = allLogs.where((log) {
+        _filteredLogs = visibleLogs.where((log) {
           return log.title.toLowerCase().contains(query.toLowerCase()) ||
               log.description.toLowerCase().contains(query.toLowerCase());
-        }).toList();
-      }
-      if (query.contains("work") ||
-          query.contains("personal") ||
-          query.contains("study") ||
-          query.contains("other")) {
-        _filteredLogs = allLogs.where((log) {
-          return log.category.toLowerCase().contains(query.toLowerCase());
         }).toList();
       }
     });
   }
 
   Color _colorCategory(String category) {
-    Color backgroundColor = Colors.black;
     switch (category) {
       case "Work":
-        backgroundColor = Colors.yellow;
+        return Colors.yellow;
       case "Personal":
-        backgroundColor = Colors.green;
+        return Colors.green;
       case "Study":
-        backgroundColor = Colors.orange;
+        return Colors.orange;
       case "Other":
-        backgroundColor = Colors.grey;
+        return Colors.grey;
       default:
-        backgroundColor = Colors.black;
+        return Colors.blueGrey;
     }
-    return backgroundColor;
   }
 
   Color _textColorForCategory(String category) {
-    switch (category) {
-      case "Work":
-      case "Personal":
-      case "Study":
-      case "Other":
-        return Colors.black;
-      default:
-        return Colors.white;
-    }
+    return Colors.black;
   }
 
   IconData _iconCategory(String category) {
@@ -423,10 +279,18 @@ class _LogViewState extends State<LogView> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = widget.currentUser['uid'] ?? 'unknown';
+    final currentUserRole = widget.currentUser['role'] ?? 'Member';
+
     return Scaffold(
       appBar: AppBar(
-        title: Text("LogBook - ${widget.username}"),
+        title: Text("LogBook: ${widget.currentUser['username']}"),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+          ),
           IconButton(
             onPressed: _confirmLogout,
             icon: const Icon(Icons.logout),
@@ -434,12 +298,10 @@ class _LogViewState extends State<LogView> {
           ),
         ],
       ),
-
       body: Column(
         children: [
           const SizedBox(height: 16),
 
-          // Welcome Message
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
@@ -447,9 +309,9 @@ class _LogViewState extends State<LogView> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              GreetingHeader(username: widget.username).getGreeting() +
+              GreetingHeader(username: widget.currentUser['username'] ?? 'User').getGreeting() +
                   ", " +
-                  widget.username +
+                  (widget.currentUser['username'] ?? 'User') +
                   "!",
               style: TextStyle(
                 fontSize: 16,
@@ -475,7 +337,6 @@ class _LogViewState extends State<LogView> {
               decoration: InputDecoration(
                 filled: true,
                 fillColor: const Color(0xfff1f1f1),
-                // Border default
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: const BorderSide(
@@ -489,10 +350,6 @@ class _LogViewState extends State<LogView> {
                     color: Color(0xff4a90e2),
                     width: 2,
                   ),
-                ),
-                errorBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: Colors.red, width: 1.5),
                 ),
                 hintText: "Search for Items",
                 hintStyle: const TextStyle(
@@ -512,7 +369,7 @@ class _LogViewState extends State<LogView> {
           ),
 
           Expanded(
-            child: ValueListenableBuilder<List<Logbook>>(
+            child: ValueListenableBuilder<List<LogModel>>(
               valueListenable: _controller.logsNotifier,
               builder: (context, currentLogs, child) {
                 if (_isLoading) {
@@ -533,17 +390,11 @@ class _LogViewState extends State<LogView> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          Icons.cloud_off,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
+                        const Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
-                        const Text(
-                          "Belum ada catatan di Cloud. Data masih kosong",
-                        ),
+                        const Text("Belum ada catatan."),
                         ElevatedButton(
-                          onPressed: _showAddLogDialog,
+                          onPressed: () => _goToEditor(),
                           child: const Text("Buat Catatan Pertama"),
                         ),
                       ],
@@ -558,11 +409,7 @@ class _LogViewState extends State<LogView> {
                 return RefreshIndicator(
                   onRefresh: () async {
                     if (_connectionService.isConnected) {
-                      await _controller.loadFromDisk();
-                      await LogHelper.writeLog(
-                        "UI: Data berhasil diperbarui dari Cloud",
-                        source: "log_view.dart",
-                      );
+                      await _controller.loadLogs(widget.currentUser['teamId'] ?? 'no_team');
                       if (mounted) {
                         showAppSnackbar(
                           context,
@@ -579,9 +426,7 @@ class _LogViewState extends State<LogView> {
                                 const Icon(Icons.wifi_off, color: Colors.white),
                                 const SizedBox(width: 8),
                                 const Expanded(
-                                  child: Text(
-                                    'Tidak ada koneksi. Tidak bisa memperbarui data.',
-                                  ),
+                                  child: Text('Tidak ada koneksi. Tidak bisa memperbarui data.'),
                                 ),
                               ],
                             ),
@@ -596,122 +441,117 @@ class _LogViewState extends State<LogView> {
                     itemCount: _filteredLogs.length,
                     itemBuilder: (context, index) {
                       final log = _filteredLogs[index];
-                      final originalIndex = _controller.logsNotifier.value
-                          .indexOf(log);
-                      return Dismissible(
-                        key: Key(log.date.toString()),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.delete, color: Colors.white),
+                      final originalIndex = _controller.logsNotifier.value.indexOf(log);
+                      final bool isOwner = log.authorId == currentUserId;
+
+                    
+                      String authorRole = 'Anggota';
+                      if (log.authorId.toLowerCase() == 'admin') {
+                        authorRole = 'Ketua';
+                      } else if (log.authorId.toLowerCase().contains('asisten')) {
+                        authorRole = 'Asisten';
+                      }
+
+                      final categoryColor = _colorCategory(log.category);
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        elevation: 3,
+                        color: categoryColor.withValues(alpha: 0.2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: categoryColor, width: 1),
                         ),
-                        onDismissed: (direction) {
-                          _controller.removeLog(originalIndex);
-                          showAppSnackbar(
-                            context,
-                            "Catatan dihapus!",
-                            SnackbarType.success,
-                          );
-                        },
-                        child: Card(
-                          elevation: 3,
-                          shadowColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
-                          ),
-                          color: _colorCategory(log.category),
-                          child: ListTile(
-                            leading: Icon(
-                              _iconCategory(log.category),
-                              color: _textColorForCategory(log.category),
-                            ),
-                            title: Text(
-                              log.title,
-                              style: TextStyle(
-                                color: _textColorForCategory(log.category),
-                                fontWeight: FontWeight.w600,
+                        child: ListTile(
+                          leading: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _iconCategory(log.category),
+                                color: categoryColor,
+                                size: 24,
                               ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  log.description,
-                                  style: TextStyle(
-                                    color: _textColorForCategory(log.category),
-                                  ),
-                                  maxLines: 2,
+                            ],
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  log.title,
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  DateTimeHelper.formatTimestamp(log.date),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: _textColorForCategory(
-                                      log.category,
-                                    ).withValues(alpha: 0.7),
+                              ),
+                              if (isOwner)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'Catatan Saya',
+                                    style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold),
                                   ),
                                 ),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                            ],
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                log.description,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 4,
+                                runSpacing: 2,
+                                children: [
+                                  Icon(Icons.person_outline, size: 12, color: Colors.grey.shade600),
+                                  Text(
+                                    authorRole,
+                                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                                   ),
-                                  margin: const EdgeInsets.only(right: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.9),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
+                                  Text(' • ', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                  Icon(Icons.access_time, size: 12, color: Colors.grey.shade600),
+                                  Text(
+                                    DateTimeHelper.formatTimestamp(DateTime.tryParse(log.date) ?? DateTime.now()),
+                                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                                   ),
-                                  child: Text(
-                                    log.category,
+                                  Text(' • ', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                  Icon(
+                                    log.id != null && log.id!.isNotEmpty ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                                    size: 12,
+                                    color: log.id != null && log.id!.isNotEmpty ? Colors.green : Colors.orange,
+                                  ),
+                                  Text(
+                                    log.id != null && log.id!.isNotEmpty ? 'Online' : 'Offline',
                                     style: TextStyle(
                                       fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
+                                      color: log.id != null && log.id!.isNotEmpty ? Colors.green : Colors.orange,
+                                      fontWeight: log.id != null && log.id!.isNotEmpty ? FontWeight.normal : FontWeight.bold,
                                     ),
                                   ),
-                                ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (AccessControlService.canEdit(currentUserRole, log.authorId, currentUserId))
                                 IconButton(
-                                  icon: const Icon(
-                                    Icons.edit,
-                                    color: Colors.blue,
-                                  ),
-                                  onPressed: () =>
-                                      _showEditLogDialog(index, log),
+                                  icon: const Icon(Icons.edit, color: Colors.blue),
+                                  onPressed: () => _goToEditor(log: log, index: originalIndex),
                                 ),
+                              if (AccessControlService.canDelete(currentUserRole, log.authorId, currentUserId))
                                 IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.red,
-                                  ),
-                                  onPressed: () {
-                                    _removeDialog(index);
-                                  },
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => _removeDialog(originalIndex),
                                 ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
                       );
@@ -723,9 +563,8 @@ class _LogViewState extends State<LogView> {
           ),
         ],
       ),
-
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddLogDialog,
+        onPressed: () => _goToEditor(),
         child: const Icon(Icons.add),
       ),
     );

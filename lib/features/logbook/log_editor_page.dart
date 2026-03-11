@@ -25,16 +25,16 @@ class LogEditorPage extends StatefulWidget {
 class _LogEditorPageState extends State<LogEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _descController;
-  String _selectedCategory = 'Other';
+  String _selectedCategory = 'Mechanical';
   bool _isPublic = false;
-  final List<String> _categories = ['Work', 'Personal', 'Study', 'Other'];
+  final List<String> _categories = ['Mechanical', 'Electronic', 'Software'];
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.log?.title ?? '');
     _descController = TextEditingController(text: widget.log?.description ?? '');
-    _selectedCategory = widget.log?.category ?? 'Other';
+    _selectedCategory = widget.log?.category ?? 'Mechanical';
     _isPublic = widget.log?.isPublic ?? false;
 
     _descController.addListener(() {

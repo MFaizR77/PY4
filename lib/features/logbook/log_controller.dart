@@ -35,19 +35,43 @@ class LogController {
 
   Future<void> _syncPendingLogs() async {
     if (!_isInitialized) return;
+    if (_currentUserId.isEmpty) return;
     
     final allLogsInBox = _myBox.values.toList();
-    final pendingLogs = allLogsInBox.where((log) => log.id == null || log.id!.isEmpty).toList();
+    
+    final pendingLogs = allLogsInBox.where((log) => 
+      (log.id == null || log.id!.isEmpty) && 
+      log.authorId == _currentUserId
+    ).toList();
     
     if (pendingLogs.isEmpty) {
       await LogHelper.writeLog('SYNC: Tidak ada data pending untuk disinkronkan', source: 'log_controller.dart');
       return;
     }
 
-    await LogHelper.writeLog('SYNC: Menemukan ${pendingLogs.length} data pending, memulai sinkronisasi...', source: 'log_controller.dart');
+    await LogHelper.writeLog('SYNC: Menemukan ${pendingLogs.length} data pending untuk user $_currentUserId, memulai sinkronisasi...', source: 'log_controller.dart');
 
     for (var log in pendingLogs) {
       try {
+        final existingData = await MongoService().getLogs(_currentTeamId);
+        
+        final isDuplicate = existingData.any((existing) =>
+            existing.title == log.title &&
+            existing.authorId == log.authorId);
+
+        if (isDuplicate) {
+          await LogHelper.writeLog('SKIP: "${log.title}" sudah ada di Cloud (duplikat), mengabaikan...', source: 'log_controller.dart');
+          
+          final index = _myBox.values.toList().indexOf(log);
+          if (index >= 0) {
+            final existing = existingData.firstWhere((e) =>
+                e.title == log.title &&
+                e.authorId == log.authorId);
+            await _myBox.putAt(index, existing);
+          }
+          continue;
+        }
+
         final cloudId = ObjectId().oid;
         final syncedLog = LogModel(
           id: cloudId,
@@ -122,21 +146,8 @@ class LogController {
     String category,
     bool isPublic,
   ) async {
-    final newLog = LogModel(
-      id: null,
-      title: title,
-      description: desc,
-      date: DateTime.now().toIso8601String(),
-      authorId: authorId,
-      teamId: teamId,
-      category: category,
-      isPublic: isPublic,
-    );
-
-    await _myBox.add(newLog);
-    final updatedList = [...logsNotifier.value, newLog];
-    logsNotifier.value = updatedList;
-
+    final now = DateTime.now().toIso8601String();
+    
     if (ConnectionService().isConnected) {
       try {
         final cloudId = ObjectId().oid;
@@ -144,7 +155,7 @@ class LogController {
           id: cloudId,
           title: title,
           description: desc,
-          date: DateTime.now().toIso8601String(),
+          date: now,
           authorId: authorId,
           teamId: teamId,
           category: category,
@@ -152,26 +163,52 @@ class LogController {
         );
 
         await MongoService().insertLog(cloudLog);
-
-        final index = _myBox.values.toList().indexOf(newLog);
-        if (index >= 0) {
-          await _myBox.putAt(index, cloudLog);
-          logsNotifier.value = [...logsNotifier.value];
-          logsNotifier.value = _myBox.values.where((log) => log.teamId == _currentTeamId).toList();
-        }
+        await _myBox.add(cloudLog);
+        
+        final updatedList = [...logsNotifier.value, cloudLog];
+        logsNotifier.value = updatedList;
 
         await LogHelper.writeLog(
-          'SUCCESS: Data tersinkron ke Cloud',
+          'SUCCESS: Data tersinkron ke Cloud (Online)',
           source: 'log_controller.dart',
         );
       } catch (e) {
+        final localLog = LogModel(
+          id: null,
+          title: title,
+          description: desc,
+          date: now,
+          authorId: authorId,
+          teamId: teamId,
+          category: category,
+          isPublic: isPublic,
+        );
+        await _myBox.add(localLog);
+        final updatedList = [...logsNotifier.value, localLog];
+        logsNotifier.value = updatedList;
+        
         await LogHelper.writeLog(
-          'WARNING: Data tersimpan lokal, akan sinkron saat online',
+          'WARNING: Gagal sync, data tersimpan lokal - $e',
           source: 'log_controller.dart',
           level: 1,
         );
       }
     } else {
+      final localLog = LogModel(
+        id: null,
+        title: title,
+        description: desc,
+        date: now,
+        authorId: authorId,
+        teamId: teamId,
+        category: category,
+        isPublic: isPublic,
+      );
+
+      await _myBox.add(localLog);
+      final updatedList = [...logsNotifier.value, localLog];
+      logsNotifier.value = updatedList;
+
       await LogHelper.writeLog(
         'OFFLINE: Data tersimpan lokal (belum sync)',
         source: 'log_controller.dart',

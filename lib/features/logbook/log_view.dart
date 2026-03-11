@@ -44,7 +44,9 @@ class _LogViewState extends State<LogView> {
     _filteredLogs = _controller.logsNotifier.value;
 
     _controller.logsNotifier.addListener(() {
-      _applyFilter(_searchQuery);
+      if (mounted) {
+        _applyFilter(_searchQuery);
+      }
     });
 
     _connectionService.isConnectedNotifier.addListener(_onConnectionChanged);
@@ -245,16 +247,14 @@ class _LogViewState extends State<LogView> {
 
   Color _colorCategory(String category) {
     switch (category) {
-      case "Work":
-        return Colors.yellow;
-      case "Personal":
+      case "Mechanical":
         return Colors.green;
-      case "Study":
-        return Colors.orange;
-      case "Other":
-        return Colors.grey;
+      case "Electronic":
+        return Colors.blue;
+      case "Software":
+        return Colors.purple;
       default:
-        return Colors.blueGrey;
+        return Colors.grey;
     }
   }
 
@@ -264,12 +264,12 @@ class _LogViewState extends State<LogView> {
 
   IconData _iconCategory(String category) {
     switch (category) {
-      case "Work":
-        return Icons.work;
-      case "Personal":
-        return Icons.person;
-      case "Study":
-        return Icons.school;
+      case "Mechanical":
+        return Icons.build;
+      case "Electronic":
+        return Icons.memory;
+      case "Software":
+        return Icons.code;
       case "Other":
         return Icons.note;
       default:
@@ -393,9 +393,16 @@ class _LogViewState extends State<LogView> {
                         const Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
                         const Text("Belum ada catatan."),
-                        ElevatedButton(
+                        const SizedBox(height: 8),
+                        Text(
+                          "Mulai catat kemajuan proyek Anda!",
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
                           onPressed: () => _goToEditor(),
-                          child: const Text("Buat Catatan Pertama"),
+                          icon: const Icon(Icons.add),
+                          label: const Text("Buat Catatan Pertama"),
                         ),
                       ],
                     ),
@@ -568,5 +575,17 @@ class _LogViewState extends State<LogView> {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _controller.logsNotifier.removeListener(() {
+      if (mounted) {
+        _applyFilter(_searchQuery);
+      }
+    });
+    _connectionService.isConnectedNotifier.removeListener(_onConnectionChanged);
+    _controller.dispose();
+    super.dispose();
   }
 }

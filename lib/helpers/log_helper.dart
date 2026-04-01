@@ -5,6 +5,12 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path_provider/path_provider.dart';
 
 class LogHelper {
+  static bool _localeSet = () {
+    try {
+      Intl.defaultLocale = 'id_ID';
+    } catch (_) {}
+    return true;
+  }();
   static Future<File> _getLogFile() async {
     final directory = await getApplicationDocumentsDirectory();
     final logDir = Directory('${directory.path}/logs');
